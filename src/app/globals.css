@@ -1,0 +1,33 @@
+@import "tailwindcss";
+
+/* Dark mode via .dark class on <html> */
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme inline {
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+html,
+body {
+  min-height: 100%;
+}
+
+/* Smooth scrolling for duplicate item highlight */
+html {
+  scroll-behavior: smooth;
+}
+
+@keyframes flash-highlight {
+  0%,
+  100% {
+    background-color: transparent;
+  }
+  50% {
+    background-color: rgb(16 185 129 / 0.15);
+  }
+}
+
+.flash-highlight {
+  animation: flash-highlight 0.8s ease-in-out 2;
+}
