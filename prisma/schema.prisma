@@ -44,6 +44,7 @@ model Item {
   quantityValue String
   quantityUnit  String
   isChecked     Boolean  @default(false)
+  notes         String   @default("")
   position      Int      @default(0)
   listId        String
   list          List     @relation(fields: [listId], references: [id], onDelete: Cascade)

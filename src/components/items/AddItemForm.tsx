@@ -8,130 +8,85 @@ import { QUANTITY_AMOUNTS } from "@/constants/amounts";
 
 interface AddItemFormProps {
   listId: string;
+  essentials: Essential[];
   onAdded: (item: Item) => void;
   onDuplicate: (existingId: string) => void;
 }
 
-export function AddItemForm({ listId, onAdded, onDuplicate }: AddItemFormProps) {
+export function AddItemForm({ listId, essentials, onAdded, onDuplicate }: AddItemFormProps) {
   const [name, setName] = useState("");
   const [unit, setUnit] = useState(QUANTITY_UNITS[0]);
   const [amount, setAmount] = useState("1");
   const [customAmount, setCustomAmount] = useState("");
   const [loading, setLoading] = useState(false);
 
-  // Essentials state
-  const [essentials, setEssentials] = useState<Essential[]>([]);
-  const [showDropdown, setShowDropdown] = useState(false);
-  const [showExistsTooltip, setShowExistsTooltip] = useState(false);
-  const [savingEssential, setSavingEssential] = useState(false);
+  // Essentials browse panel
+  const [browseOpen, setBrowseOpen] = useState(false);
+  const [browseSearch, setBrowseSearch] = useState("");
+
+  // Autocomplete while typing
+  const [showAutoComplete, setShowAutoComplete] = useState(false);
 
   const nameInputRef = useRef<HTMLInputElement>(null);
-  const dropdownRef = useRef<HTMLDivElement>(null);
-  const tooltipTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const browseRef = useRef<HTMLDivElement>(null);
+  const browseSearchRef = useRef<HTMLInputElement>(null);
 
   const isCustom = amount === "Custom";
   const finalAmount = isCustom ? customAmount : amount;
-
   const trimmedName = name.trim();
-  const nameAlreadyEssential = essentials.some(
-    (e) => e.name.toLowerCase() === trimmedName.toLowerCase()
-  );
-  const matchingEssentials = essentials.filter((e) =>
-    e.name.toLowerCase().includes(trimmedName.toLowerCase())
-  );
 
-  // Fetch essentials on mount
-  const fetchEssentials = useCallback(async () => {
-    try {
-      const res = await fetch("/api/essentials");
-      if (res.ok) {
-        const data = await res.json();
-        setEssentials(data.data ?? []);
-      }
-    } catch {
-      // non-critical — essentials simply won't show
-    }
-  }, []);
+  // Autocomplete matches (while typing — only show if not browsing)
+  const autoMatches = !browseOpen && trimmedName
+    ? essentials.filter((e) => e.name.toLowerCase().includes(trimmedName.toLowerCase()))
+    : [];
 
-  useEffect(() => {
-    fetchEssentials();
-  }, [fetchEssentials]);
+  // Browse panel filtered list
+  const browseMatches = browseSearch.trim()
+    ? essentials.filter((e) => e.name.toLowerCase().includes(browseSearch.trim().toLowerCase()))
+    : essentials;
 
-  // Close dropdown on outside click
+  // Close browse on outside click
   useEffect(() => {
     function handleOutside(e: MouseEvent) {
-      if (
-        dropdownRef.current &&
-        !dropdownRef.current.contains(e.target as Node) &&
-        nameInputRef.current &&
-        !nameInputRef.current.contains(e.target as Node)
-      ) {
-        setShowDropdown(false);
+      if (browseRef.current && !browseRef.current.contains(e.target as Node)) {
+        setBrowseOpen(false);
       }
     }
-    document.addEventListener("mousedown", handleOutside);
+    if (browseOpen) {
+      document.addEventListener("mousedown", handleOutside);
+      // Auto-focus search
+      setTimeout(() => browseSearchRef.current?.focus(), 50);
+    }
     return () => document.removeEventListener("mousedown", handleOutside);
-  }, []);
+  }, [browseOpen]);
 
-  // Cleanup tooltip timer on unmount
+  // Close on Escape
   useEffect(() => {
-    return () => {
-      if (tooltipTimerRef.current) clearTimeout(tooltipTimerRef.current);
-    };
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") {
+        setBrowseOpen(false);
+        setShowAutoComplete(false);
+      }
+    }
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
   }, []);
-
-  function handleNameFocus() {
-    if (trimmedName && matchingEssentials.length > 0) setShowDropdown(true);
-  }
 
   function handleNameChange(value: string) {
     setName(value);
     const trimmed = value.trim();
-    if (trimmed && essentials.some((e) => e.name.toLowerCase().includes(trimmed.toLowerCase()))) {
-      setShowDropdown(true);
-    } else {
-      setShowDropdown(false);
-    }
+    setShowAutoComplete(
+      !!trimmed &&
+      essentials.some((e) => e.name.toLowerCase().includes(trimmed.toLowerCase()))
+    );
   }
 
-  function selectEssential(essentialName: string) {
-    setName(essentialName);
-    setShowDropdown(false);
+  function selectName(selectedName: string) {
+    setName(selectedName);
+    setShowAutoComplete(false);
+    setBrowseOpen(false);
+    setBrowseSearch("");
     nameInputRef.current?.focus();
-  }
-
-  async function handleAddEssential() {
-    if (!trimmedName || nameAlreadyEssential) return;
-    setSavingEssential(true);
-    try {
-      const res = await fetch("/api/essentials", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: trimmedName }),
-      });
-      if (res.status === 409) {
-        toast.error(`"${trimmedName}" is already in Essentials`);
-        return;
-      }
-      if (!res.ok) {
-        toast.error("Failed to add to Essentials");
-        return;
-      }
-      const data = await res.json();
-      setEssentials((prev) => [...prev, data.data as Essential].sort((a, b) => a.name.localeCompare(b.name)));
-      toast.success(`"${trimmedName}" added to Essentials ✓`);
-    } catch {
-      toast.error("Network error");
-    } finally {
-      setSavingEssential(false);
-    }
-  }
-
-  function handleExistsClick() {
-    if (!nameAlreadyEssential) return;
-    setShowExistsTooltip(true);
-    if (tooltipTimerRef.current) clearTimeout(tooltipTimerRef.current);
-    tooltipTimerRef.current = setTimeout(() => setShowExistsTooltip(false), 2000);
   }
 
   async function handleSubmit(e: FormEvent) {
@@ -167,7 +122,7 @@ export function AddItemForm({ listId, onAdded, onDuplicate }: AddItemFormProps) 
       setName("");
       setAmount("1");
       setCustomAmount("");
-      setShowDropdown(false);
+      setShowAutoComplete(false);
     } catch {
       toast.error("Network error");
     } finally {
@@ -185,84 +140,131 @@ export function AddItemForm({ listId, onAdded, onDuplicate }: AddItemFormProps) 
       </p>
 
       <div className="flex flex-col sm:flex-row gap-2">
-        {/* Item name + essentials */}
-        <div className="relative flex-1">
+        {/* Item name + Browse Essentials */}
+        <div className="relative flex-1" ref={browseRef}>
           <div className="flex gap-2">
-            <input
-              ref={nameInputRef}
-              type="text"
-              value={name}
-              onChange={(e) => handleNameChange(e.target.value)}
-              onFocus={handleNameFocus}
-              placeholder="Item name (e.g. Milk)"
-              required
-              autoFocus
-              className="flex-1 px-3 py-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
-            />
+            {/* Name input */}
+            <div className="relative flex-1">
+              <input
+                ref={nameInputRef}
+                type="text"
+                value={name}
+                onChange={(e) => handleNameChange(e.target.value)}
+                onFocus={() => {
+                  if (trimmedName && autoMatches.length > 0) setShowAutoComplete(true);
+                }}
+                onBlur={() => setTimeout(() => setShowAutoComplete(false), 150)}
+                placeholder="Item name (e.g. Milk)"
+                required
+                autoFocus
+                className="w-full px-3 py-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+              />
 
-            {/* Add to Essentials button */}
-            <div className="relative group/essential flex-shrink-0">
+              {/* Autocomplete while typing */}
+              {showAutoComplete && autoMatches.length > 0 && (
+                <div className="absolute top-full left-0 right-0 mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-lg z-40 overflow-hidden">
+                  <p className="px-3 pt-2 pb-1 text-[10px] font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wide">
+                    Your Essentials
+                  </p>
+                  <ul className="max-h-40 overflow-y-auto pb-1">
+                    {autoMatches.map((e) => (
+                      <li key={e.id}>
+                        <button
+                          type="button"
+                          onMouseDown={() => selectName(e.name)}
+                          className="w-full text-left px-3 py-2 text-sm text-gray-800 dark:text-gray-200 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 hover:text-emerald-700 dark:hover:text-emerald-300 flex items-center gap-2 transition-colors"
+                        >
+                          <svg className="w-3 h-3 shrink-0 text-amber-400" viewBox="0 0 24 24" fill="currentColor">
+                            <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
+                          </svg>
+                          {e.name}
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+
+            {/* Browse Essentials button */}
+            {essentials.length > 0 && (
               <button
                 type="button"
-                disabled={!trimmedName || nameAlreadyEssential || savingEssential}
-                onClick={nameAlreadyEssential ? handleExistsClick : handleAddEssential}
-                aria-label={nameAlreadyEssential ? "Already in Essentials" : "Add to Essentials"}
-                className={`h-full px-2.5 rounded-xl border text-xs font-medium transition-colors flex items-center gap-1.5 ${
-                  nameAlreadyEssential
-                    ? "border-amber-200 dark:border-amber-700/50 bg-amber-50 dark:bg-amber-900/20 text-amber-500 dark:text-amber-400 cursor-not-allowed"
-                    : !trimmedName
-                    ? "border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-300 dark:text-gray-600 cursor-not-allowed"
-                    : "border-emerald-200 dark:border-emerald-700/50 bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-100 dark:hover:bg-emerald-900/40 cursor-pointer"
+                onClick={() => { setBrowseOpen((o) => !o); setBrowseSearch(""); }}
+                aria-label="Browse your Essentials"
+                aria-expanded={browseOpen}
+                className={`shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-xl border text-xs font-medium transition-colors ${
+                  browseOpen
+                    ? "border-amber-400 dark:border-amber-500 bg-amber-50 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400"
+                    : "border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-500 dark:text-gray-400 hover:border-amber-300 dark:hover:border-amber-600 hover:text-amber-600 dark:hover:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/20"
                 }`}
               >
                 <svg className="w-3.5 h-3.5 shrink-0" viewBox="0 0 24 24" fill="currentColor">
                   <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
                 </svg>
-                <span className="hidden sm:inline whitespace-nowrap">Essentials</span>
+                <span className="hidden sm:inline whitespace-nowrap">Browse</span>
+                <span className="text-[10px] bg-amber-100 dark:bg-amber-900/50 text-amber-600 dark:text-amber-300 rounded-full px-1.5 py-0.5 font-bold">
+                  {essentials.length}
+                </span>
               </button>
-
-              {/* Desktop tooltip — CSS hover */}
-              {nameAlreadyEssential && (
-                <div className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2.5 py-1.5 rounded-lg bg-gray-900 dark:bg-gray-700 text-white text-xs whitespace-nowrap shadow-lg opacity-0 group-hover/essential:opacity-100 transition-opacity z-20 [@media(hover:none)]:hidden">
-                  The item already exists
-                  <div className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-gray-900 dark:border-t-gray-700" />
-                </div>
-              )}
-
-              {/* Mobile/tablet tooltip — visible after click */}
-              {nameAlreadyEssential && showExistsTooltip && (
-                <div className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2.5 py-1.5 rounded-lg bg-gray-900 dark:bg-gray-700 text-white text-xs whitespace-nowrap shadow-lg z-20 [@media(hover:hover)]:hidden">
-                  The item already exists
-                  <div className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-gray-900 dark:border-t-gray-700" />
-                </div>
-              )}
-            </div>
+            )}
           </div>
 
-          {/* Essentials dropdown */}
-          {showDropdown && matchingEssentials.length > 0 && (
-            <div
-              ref={dropdownRef}
-              className="absolute top-full left-0 right-0 mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-lg z-30 overflow-hidden"
-            >
-              <p className="px-3 pt-2 pb-1 text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wide">
-                Essentials
-              </p>
-              <ul className="max-h-48 overflow-y-auto">
-                {matchingEssentials.map((e) => (
-                  <li key={e.id}>
-                    <button
-                      type="button"
-                      onMouseDown={(ev) => { ev.preventDefault(); selectEssential(e.name); }}
-                      className="w-full text-left px-3 py-2 text-sm text-gray-800 dark:text-gray-200 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 hover:text-emerald-700 dark:hover:text-emerald-300 flex items-center gap-2 transition-colors"
-                    >
-                      <svg className="w-3 h-3 shrink-0 text-emerald-500 dark:text-emerald-400" viewBox="0 0 24 24" fill="currentColor">
-                        <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
-                      </svg>
-                      {e.name}
-                    </button>
+          {/* Browse Essentials dropdown panel */}
+          {browseOpen && (
+            <div className="absolute top-full left-0 right-0 mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-xl z-40 overflow-hidden">
+              {/* Header */}
+              <div className="flex items-center justify-between px-3 pt-3 pb-2 border-b border-gray-100 dark:border-gray-700">
+                <p className="text-xs font-semibold text-amber-600 dark:text-amber-400 flex items-center gap-1.5">
+                  <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
+                  </svg>
+                  Consider from your Essentials
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setBrowseOpen(false)}
+                  className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors"
+                  aria-label="Close"
+                >
+                  <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+                  </svg>
+                </button>
+              </div>
+              {/* Search */}
+              <div className="px-3 py-2">
+                <input
+                  ref={browseSearchRef}
+                  type="text"
+                  value={browseSearch}
+                  onChange={(e) => setBrowseSearch(e.target.value)}
+                  placeholder="Search essentials…"
+                  className="w-full px-3 py-1.5 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 focus:border-transparent"
+                />
+              </div>
+              {/* Results */}
+              <ul className="max-h-52 overflow-y-auto pb-2">
+                {browseMatches.length === 0 ? (
+                  <li className="px-3 py-3 text-sm text-gray-400 dark:text-gray-500 text-center">
+                    No essentials match
                   </li>
-                ))}
+                ) : (
+                  browseMatches.map((e) => (
+                    <li key={e.id}>
+                      <button
+                        type="button"
+                        onMouseDown={() => selectName(e.name)}
+                        className="w-full text-left px-3 py-2.5 text-sm text-gray-800 dark:text-gray-200 hover:bg-amber-50 dark:hover:bg-amber-900/20 hover:text-amber-700 dark:hover:text-amber-300 flex items-center gap-2.5 transition-colors"
+                      >
+                        <svg className="w-3.5 h-3.5 shrink-0 text-amber-400" viewBox="0 0 24 24" fill="currentColor">
+                          <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
+                        </svg>
+                        <span>{e.name}</span>
+                      </button>
+                    </li>
+                  ))
+                )}
               </ul>
             </div>
           )}
@@ -276,9 +278,7 @@ export function AddItemForm({ listId, onAdded, onDuplicate }: AddItemFormProps) 
             className="w-28 px-2 py-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent appearance-none cursor-pointer"
           >
             {QUANTITY_AMOUNTS.map((a) => (
-              <option key={a} value={a}>
-                {a}
-              </option>
+              <option key={a} value={a}>{a}</option>
             ))}
           </select>
 
@@ -288,9 +288,7 @@ export function AddItemForm({ listId, onAdded, onDuplicate }: AddItemFormProps) 
             className="w-24 px-2 py-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent appearance-none cursor-pointer"
           >
             {QUANTITY_UNITS.map((u) => (
-              <option key={u} value={u}>
-                {u}
-              </option>
+              <option key={u} value={u}>{u}</option>
             ))}
           </select>
         </div>

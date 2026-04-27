@@ -10,7 +10,7 @@ import { FilterTabs, FilterTab } from "@/components/common/FilterTabs";
 import { SearchBar } from "@/components/common/SearchBar";
 import { ConfirmModal } from "@/components/common/ConfirmModal";
 import { ProgressBar } from "@/components/common/ProgressBar";
-import { Item, ListWithItems } from "@/types";
+import { Item, ListWithItems, Essential } from "@/types";
 
 export default function ListDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -18,6 +18,7 @@ export default function ListDetailPage() {
   const [list, setList] = useState<ListWithItems | null>(null);
   const [items, setItems] = useState<Item[]>([]);
   const [loading, setLoading] = useState(true);
+  const [essentials, setEssentials] = useState<Essential[]>([]);
 
   const [filterTab, setFilterTab] = useState<FilterTab>("all");
   const [search, setSearch] = useState("");
@@ -48,9 +49,22 @@ export default function ListDetailPage() {
     }
   }, [id]);
 
+  const fetchEssentials = useCallback(async () => {
+    try {
+      const res = await fetch("/api/essentials");
+      if (res.ok) {
+        const data = await res.json();
+        setEssentials(data.data ?? []);
+      }
+    } catch {
+      // non-critical
+    }
+  }, []);
+
   useEffect(() => {
     fetchList();
-  }, [fetchList]);
+    fetchEssentials();
+  }, [fetchList, fetchEssentials]);
 
   // Update browser tab title to list name
   useEffect(() => {
@@ -86,6 +100,9 @@ export default function ListDetailPage() {
     checked: items.filter((i) => i.isChecked).length,
   };
 
+  const checkedCount = items.filter((i) => i.isChecked).length;
+  const allChecked = items.length > 0 && checkedCount === items.length;
+
   function scrollToItem(itemId: string) {
     const el = itemRefs.current[itemId];
     if (el) {
@@ -101,7 +118,6 @@ export default function ListDetailPage() {
   }
 
   function handleDuplicateItem(existingId: string) {
-    // Switch to "all" tab so item is visible, clear search
     setFilterTab("all");
     setSearch("");
     setTimeout(() => scrollToItem(existingId), 100);
@@ -109,10 +125,7 @@ export default function ListDetailPage() {
 
   async function handleToggle(item: Item) {
     const next = !item.isChecked;
-    // Optimistic update
-    setItems((prev) =>
-      prev.map((i) => (i.id === item.id ? { ...i, isChecked: next } : i))
-    );
+    setItems((prev) => prev.map((i) => (i.id === item.id ? { ...i, isChecked: next } : i)));
     try {
       await fetch(`/api/items/${item.id}`, {
         method: "PATCH",
@@ -120,11 +133,28 @@ export default function ListDetailPage() {
         body: JSON.stringify({ isChecked: next }),
       });
     } catch {
-      // Revert
-      setItems((prev) =>
-        prev.map((i) => (i.id === item.id ? { ...i, isChecked: item.isChecked } : i))
-      );
+      setItems((prev) => prev.map((i) => (i.id === item.id ? { ...i, isChecked: item.isChecked } : i)));
       toast.error("Failed to update item");
+    }
+  }
+
+  async function handleCheckAll() {
+    const next = !allChecked;
+    const toUpdate = items.filter((i) => i.isChecked !== next);
+    setItems((prev) => prev.map((i) => ({ ...i, isChecked: next })));
+    try {
+      await Promise.all(
+        toUpdate.map((i) =>
+          fetch(`/api/items/${i.id}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ isChecked: next }),
+          })
+        )
+      );
+    } catch {
+      toast.error("Failed to update items");
+      fetchList();
     }
   }
 
@@ -164,9 +194,7 @@ export default function ListDetailPage() {
     setClearLoading(true);
     const checkedIds = items.filter((i) => i.isChecked).map((i) => i.id);
     try {
-      await Promise.all(
-        checkedIds.map((id) => fetch(`/api/items/${id}`, { method: "DELETE" }))
-      );
+      await Promise.all(checkedIds.map((cid) => fetch(`/api/items/${cid}`, { method: "DELETE" })));
       setItems((prev) => prev.filter((i) => !i.isChecked));
       setClearCheckedOpen(false);
       toast.success("Cleared checked items");
@@ -177,15 +205,92 @@ export default function ListDetailPage() {
     }
   }
 
-  const checkedCount = items.filter((i) => i.isChecked).length;
+  async function handleMarkEssential(name: string) {
+    try {
+      const res = await fetch("/api/essentials", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name }),
+      });
+      if (res.status === 409) { toast(`"${name}" is already an Essential`); return; }
+      if (!res.ok) { toast.error("Failed to mark Essential"); return; }
+      const data = await res.json();
+      setEssentials((prev) => [...prev, data.data as Essential].sort((a, b) => a.name.localeCompare(b.name)));
+      toast.success(`"${name}" marked as Essential ★`);
+    } catch {
+      toast.error("Network error");
+    }
+  }
+
+  async function handleUnmarkEssential(name: string) {
+    const essential = essentials.find((e) => e.name.toLowerCase() === name.toLowerCase());
+    if (!essential) return;
+    try {
+      const res = await fetch(`/api/essentials/${essential.id}`, { method: "DELETE" });
+      if (!res.ok) { toast.error("Failed to unmark Essential"); return; }
+      setEssentials((prev) => prev.filter((e) => e.id !== essential.id));
+      toast(`"${name}" removed from Essentials`);
+    } catch {
+      toast.error("Network error");
+    }
+  }
+
+  async function handleNotesUpdate(itemId: string, notes: string) {
+    setItems((prev) => prev.map((i) => (i.id === itemId ? { ...i, notes } : i)));
+    try {
+      await fetch(`/api/items/${itemId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ notes }),
+      });
+    } catch {
+      toast.error("Failed to save notes");
+    }
+  }
+
+  async function handleNameUpdate(itemId: string, name: string) {
+    const prev = items.find((i) => i.id === itemId);
+    setItems((prevItems) => prevItems.map((i) => (i.id === itemId ? { ...i, name } : i)));
+    try {
+      const res = await fetch(`/api/items/${itemId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name }),
+      });
+      if (!res.ok) {
+        if (prev) setItems((p) => p.map((i) => (i.id === itemId ? { ...i, name: prev.name } : i)));
+        toast.error("Failed to rename item");
+      }
+    } catch {
+      toast.error("Network error");
+    }
+  }
+
+  // Quick-add from empty state essentials chips
+  async function handleQuickAdd(essentialName: string) {
+    try {
+      const res = await fetch(`/api/lists/${id}/items`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: essentialName, quantityValue: "1", quantityUnit: "no." }),
+      });
+      const data = await res.json();
+      if (res.status === 409) {
+        toast.error(`"${essentialName}" already in list`);
+        handleDuplicateItem(data.existingId);
+        return;
+      }
+      if (!res.ok) { toast.error(data.error ?? "Failed to add item"); return; }
+      setItems((prev) => [...prev, data.data as Item]);
+      toast.success(`"${essentialName}" added!`);
+    } catch {
+      toast.error("Network error");
+    }
+  }
 
   return (
     <>
-      <Header
-        backHref="/dashboard"
-        backLabel="My Lists"
-        title={list?.name ?? "List"}
-      />
+      <Header backHref="/dashboard" backLabel="My Lists" title={list?.name ?? "List"} />
 
       <main className="flex-1 max-w-2xl mx-auto w-full px-4 sm:px-6 py-6 flex flex-col gap-5">
         {loading ? (
@@ -210,6 +315,7 @@ export default function ListDetailPage() {
             {/* Add item form */}
             <AddItemForm
               listId={id}
+              essentials={essentials}
               onAdded={handleAdded}
               onDuplicate={handleDuplicateItem}
             />
@@ -231,36 +337,59 @@ export default function ListDetailPage() {
               </p>
             )}
 
-            {/* Clear checked */}
-            {checkedCount > 0 && (
-              <div className="flex justify-end">
+            {/* Toolbar actions row */}
+            {items.length > 0 && (
+              <div className="flex items-center justify-between gap-2">
+                {/* Check all / Uncheck all */}
                 <button
-                  onClick={() => setClearCheckedOpen(true)}
-                  className="flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400 hover:text-red-500 dark:hover:text-red-400 transition-colors"
+                  onClick={handleCheckAll}
+                  className="flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400 hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors"
                 >
                   <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <polyline points="3 6 5 6 21 6" />
-                    <path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6" />
-                    <path d="M10 11v6M14 11v6" />
-                    <path d="M9 6V4a1 1 0 011-1h4a1 1 0 011 1v2" />
+                    {allChecked ? (
+                      <path d="M9 14l-4-4 1.4-1.4L9 11.2l8.6-8.6L19 4l-10 10z" />
+                    ) : (
+                      <>
+                        <polyline points="9 11 12 14 22 4" />
+                        <path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11" />
+                      </>
+                    )}
                   </svg>
-                  Clear {checkedCount} checked
+                  {allChecked ? "Uncheck all" : "Check all"}
                 </button>
+
+                {/* Clear checked */}
+                {checkedCount > 0 && (
+                  <button
+                    onClick={() => setClearCheckedOpen(true)}
+                    className="flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400 hover:text-red-500 dark:hover:text-red-400 transition-colors"
+                  >
+                    <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <polyline points="3 6 5 6 21 6" />
+                      <path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6" />
+                      <path d="M10 11v6M14 11v6" />
+                      <path d="M9 6V4a1 1 0 011-1h4a1 1 0 011 1v2" />
+                    </svg>
+                    Clear {checkedCount} checked
+                  </button>
+                )}
               </div>
             )}
 
             {/* Items list */}
             <div>
-              {/* Attach refs for scroll-to */}
               <SortableItemList
-                items={filteredItems.map((item) => ({
-                  ...item,
-                  // Inject ref via a wrapper — see ItemRow for ref prop
-                }))}
+                items={filteredItems}
+                essentials={essentials}
                 isDragDisabled={isDragDisabled}
                 onReorder={handleReorder}
                 onToggle={handleToggle}
                 onDelete={setDeleteTarget}
+                onMarkEssential={handleMarkEssential}
+                onUnmarkEssential={handleUnmarkEssential}
+                onNotesUpdate={handleNotesUpdate}
+                onNameUpdate={handleNameUpdate}
+                onQuickAdd={handleQuickAdd}
               />
               {/* Hidden refs layer for scroll targeting */}
               {filteredItems.map((item) => (

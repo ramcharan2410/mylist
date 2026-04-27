@@ -18,6 +18,7 @@ export interface Item {
   quantityValue: string;
   quantityUnit: string;
   isChecked: boolean;
+  notes: string;
   position: number;
   listId: string;
   createdAt: string;

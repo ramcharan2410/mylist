@@ -29,6 +29,8 @@ export async function PATCH(
       ...(body.isChecked !== undefined && { isChecked: body.isChecked }),
       ...(body.quantityValue !== undefined && { quantityValue: body.quantityValue }),
       ...(body.quantityUnit !== undefined && { quantityUnit: body.quantityUnit }),
+      ...(body.notes !== undefined && { notes: body.notes }),
+      ...(body.name !== undefined && body.name.trim() && { name: body.name.trim() }),
     },
   });
 
