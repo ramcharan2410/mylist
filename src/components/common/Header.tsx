@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import { useUser } from "@/contexts/UserContext";
 import { useRouter } from "next/navigation";
+import { DarkModeToggle } from "@/components/common/DarkModeToggle";
 
 interface HeaderProps {
   backHref?: string;
@@ -13,23 +13,16 @@ interface HeaderProps {
 export function Header({ backHref, backLabel, title }: HeaderProps) {
   const { user, logout } = useUser();
   const router = useRouter();
-  const [dark, setDark] = useState(false);
 
-  useEffect(() => {
-    setDark(document.documentElement.classList.contains("dark"));
-  }, []);
-
-  function toggleDark() {
-    const next = !dark;
-    setDark(next);
-    if (next) {
-      document.documentElement.classList.add("dark");
-      localStorage.setItem("theme", "dark");
-    } else {
-      document.documentElement.classList.remove("dark");
-      localStorage.setItem("theme", "light");
-    }
-  }
+  // Compute initials for mobile avatar
+  const initials = user?.name
+    ? user.name
+        .split(" ")
+        .map((w) => w[0])
+        .slice(0, 2)
+        .join("")
+        .toUpperCase()
+    : "";
 
   return (
     <header className="sticky top-0 z-40 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700 shadow-sm">
@@ -67,27 +60,19 @@ export function Header({ backHref, backLabel, title }: HeaderProps) {
 
         <div className="flex items-center gap-1 shrink-0">
           {user && (
-            <span className="hidden sm:block text-xs text-gray-500 dark:text-gray-400 max-w-[120px] truncate mr-1">
-              {user.name}
-            </span>
+            <>
+              {/* Desktop: full name text */}
+              <span className="hidden sm:block text-xs text-gray-500 dark:text-gray-400 max-w-[120px] truncate mr-1">
+                {user.name}
+              </span>
+              {/* Mobile: initials avatar */}
+              <span className="sm:hidden w-7 h-7 rounded-full bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 text-xs font-bold flex items-center justify-center mr-1">
+                {initials}
+              </span>
+            </>
           )}
 
-          <button
-            onClick={toggleDark}
-            aria-label="Toggle dark mode"
-            className="p-2 rounded-lg text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
-          >
-            {dark ? (
-              <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <circle cx="12" cy="12" r="5" />
-                <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" />
-              </svg>
-            ) : (
-              <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z" />
-              </svg>
-            )}
-          </button>
+          <DarkModeToggle />
 
           {user && (
             <button
@@ -102,3 +87,4 @@ export function Header({ backHref, backLabel, title }: HeaderProps) {
     </header>
   );
 }
+

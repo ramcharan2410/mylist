@@ -52,6 +52,12 @@ export default function ListDetailPage() {
     fetchList();
   }, [fetchList]);
 
+  // Update browser tab title to list name
+  useEffect(() => {
+    if (list?.name) document.title = `${list.name} — My List`;
+    return () => { document.title = "My List"; };
+  }, [list?.name]);
+
   // Debounced search state
   const [debouncedSearch, setDebouncedSearch] = useState("");
   useEffect(() => {

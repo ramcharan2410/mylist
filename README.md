@@ -34,3 +34,14 @@ You can check out [the Next.js GitHub repository](https://github.com/vercel/next
 The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
 
 Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+
+## First time migration from DEV to PROD
+
+Change the DATABASE_URL fromm DEV to PROD.
+
+Then run the following two commands:
+
+```bash
+npx prisma migrate dev --name init # creates migration files
+npx prisma migrate deploy # applies them to production
+```
